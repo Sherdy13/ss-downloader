@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# Secrets and auth — never commit these
+browser.json
+*.toml
+!config.toml.example
+
+# State
+state.json
+
+# Downloaded music
+*.mp3
+*.wav
+*.flac
+failed.txt
+
+# Claude Code
+.claude/
+
+# macOS
+.DS_Store
