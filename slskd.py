@@ -1,10 +1,11 @@
-import os
 import re
 import shutil
 import time
 from pathlib import Path
 
 import slskd_api
+
+from utils import safe_filename
 
 ACCEPTED_EXTENSIONS = {".wav", ".mp3"}
 
@@ -34,7 +35,7 @@ def _strip_parens(s: str) -> str:
 def query_variants(artist: str, title: str) -> list[str]:
     a, t = artist.strip(), title.strip()
     ac, tc = _clean_token(a), _clean_token(t)
-    tb = _strip_parens(t)  # bare title with all parens removed
+    tb = _strip_parens(t)
     variants = [
         f"{a} {t}",
         f"{a} - {t}",
@@ -45,13 +46,11 @@ def query_variants(artist: str, title: str) -> list[str]:
             f"{ac} {tc}",
             f"{ac} - {tc}",
         ]
-    # Always try bare title (all parens stripped) + artist as a last resort
     if tb != t and tb != tc:
         variants += [
             f"{a} {tb}",
             f"{a} - {tb}",
         ]
-    # Deduplicate while preserving order
     seen = set()
     result = []
     for v in variants:
@@ -74,13 +73,16 @@ def _is_acceptable(f: dict, min_mp3_bitrate: int) -> bool:
     if ext == ".mp3":
         bitrate = f.get("bitRate") or 0
         return bitrate >= min_mp3_bitrate
-    return True  # .wav — always accept
+    return True
 
 
-def _rank(f: dict) -> tuple:
-    """Lower score = more preferred."""
-    ext = _ext(f.get("filename", ""))
-    format_rank = 0 if ext == ".wav" else 1
+def _rank(f: dict, formats: list[str]) -> tuple:
+    """Lower score = more preferred. Rank by format preference order, then bitrate descending."""
+    ext = _ext(f.get("filename", "")).lstrip(".")
+    try:
+        format_rank = formats.index(ext)
+    except ValueError:
+        format_rank = len(formats)
     bitrate = f.get("bitRate") or 0
     return (format_rank, -bitrate)
 
@@ -109,7 +111,7 @@ def _wait_for_search(client: slskd_api.SlskdClient, search_id: str,
 
 
 def _best_result(responses: list[dict], artist: str, title: str,
-                 min_mp3_bitrate: int) -> tuple[str, dict] | None:
+                 min_mp3_bitrate: int, formats: list[str]) -> tuple[str, dict] | None:
     """Return (username, file_dict) for the best qualifying result, or None."""
     candidates = []
     for response in responses:
@@ -122,7 +124,7 @@ def _best_result(responses: list[dict], artist: str, title: str,
                 candidates.append((username, f))
     if not candidates:
         return None
-    candidates.sort(key=lambda x: _rank(x[1]))
+    candidates.sort(key=lambda x: _rank(x[1], formats))
     return candidates[0]
 
 
@@ -142,6 +144,19 @@ def _wait_for_download(client: slskd_api.SlskdClient, username: str,
     return False
 
 
+def _find_slskd_file(client: slskd_api.SlskdClient, filename: str) -> Path | None:
+    """Ask slskd where it saved the file, searching recursively under the download dir."""
+    try:
+        app_info = client.application.state()
+        dl_dir = app_info.get("options", {}).get("directories", {}).get("downloads", "")
+        if dl_dir:
+            matches = list(Path(dl_dir).rglob(Path(filename).name))
+            return matches[0] if matches else None
+    except Exception:
+        pass
+    return None
+
+
 def download_track(
     client: slskd_api.SlskdClient,
     artist: str,
@@ -151,6 +166,7 @@ def download_track(
     download_timeout: int,
     poll_interval: float,
     min_mp3_bitrate: int,
+    formats: list[str],
 ) -> Path | None:
     """
     Try each query variant in order. For each, search slskd, pick the best
@@ -167,7 +183,7 @@ def download_track(
             continue
 
         responses = _wait_for_search(client, search_id, search_timeout, poll_interval)
-        best = _best_result(responses, artist, title, min_mp3_bitrate)
+        best = _best_result(responses, artist, title, min_mp3_bitrate, formats)
 
         if not best:
             print(f"  [slskd] no qualifying results for '{query}'")
@@ -180,7 +196,7 @@ def download_track(
         username, file_info = best
         remote_filename = file_info["filename"]
         ext = _ext(remote_filename)
-        clean_name = _safe_filename(f"{artist} - {title}") + ext
+        clean_name = safe_filename(f"{artist} - {title}") + ext
         dest = output_dir / clean_name
 
         print(f"  [slskd] downloading '{remote_filename}' from {username}")
@@ -188,6 +204,10 @@ def download_track(
             client.transfers.enqueue(username=username, files=[file_info])
         except Exception as e:
             print(f"  [slskd] enqueue failed: {e}")
+            try:
+                client.searches.delete(search_id)
+            except Exception:
+                pass
             continue
 
         success = _wait_for_download(
@@ -195,10 +215,18 @@ def download_track(
         )
         if not success:
             print(f"  [slskd] download timed out or failed")
+            try:
+                client.searches.delete(search_id)
+            except Exception:
+                pass
             continue
 
-        # slskd saves files to its own download dir; find and move the file
         slskd_downloads = _find_slskd_file(client, remote_filename)
+        try:
+            client.searches.delete(search_id)
+        except Exception:
+            pass
+
         if slskd_downloads and slskd_downloads.exists():
             shutil.move(str(slskd_downloads), str(dest))
             print(f"  [slskd] saved to {dest}")
@@ -206,24 +234,4 @@ def download_track(
 
         print(f"  [slskd] could not locate downloaded file")
 
-    return None
-
-
-def _safe_filename(name: str) -> str:
-    return re.sub(r'[<>:"/\\|?*]', "", name).strip()
-
-
-def _find_slskd_file(client: slskd_api.SlskdClient, filename: str) -> Path | None:
-    """Ask slskd where it saved the file."""
-    try:
-        app_info = client.application.state()
-        dl_dir = app_info.get("options", {}).get("directories", {}).get("downloads", "")
-        if dl_dir:
-            # slskd preserves the full remote path under the download dir
-            remote_path = Path(filename)
-            candidate = Path(dl_dir) / remote_path.name
-            if candidate.exists():
-                return candidate
-    except Exception:
-        pass
     return None

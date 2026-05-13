@@ -7,6 +7,7 @@ import slskd
 import state
 import ytdlp
 import ytmusic
+from utils import safe_filename
 
 
 def check_slskd(client) -> None:
@@ -20,8 +21,7 @@ def check_slskd(client) -> None:
 
 def file_already_exists(output_dir: Path, artist: str, title: str) -> Path | None:
     """Return the existing file path if any version of artist - title is on disk."""
-    from slskd import _safe_filename
-    stem = _safe_filename(f"{artist} - {title}").lower()
+    stem = safe_filename(f"{artist} - {title}").lower()
     for f in output_dir.iterdir() if output_dir.exists() else []:
         if f.stem.lower() == stem and f.suffix.lower() in {".wav", ".mp3"}:
             return f
@@ -112,6 +112,7 @@ def main() -> None:
             download_timeout=s["download_timeout_seconds"],
             poll_interval=s["poll_interval_seconds"],
             min_mp3_bitrate=q["min_mp3_bitrate"],
+            formats=q["formats"],
         )
 
         if result:

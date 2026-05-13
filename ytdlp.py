@@ -1,7 +1,8 @@
-import re
 import subprocess
 import tempfile
 from pathlib import Path
+
+from utils import safe_filename
 
 
 def download_track(
@@ -15,16 +16,16 @@ def download_track(
     Saves as '{artist} - {title}.ext' in output_dir.
     Returns the output path on success, None on failure.
     """
+    import re
     if not re.fullmatch(r"[A-Za-z0-9_-]{11}", video_id):
         print(f"  [yt-dlp] invalid video_id: {video_id!r}")
         return None
     output_dir.mkdir(parents=True, exist_ok=True)
-    clean_name = _safe_filename(f"{artist} - {title}")
+    clean_name = safe_filename(f"{artist} - {title}")
     url = f"https://www.youtube.com/watch?v={video_id}"
 
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
-        # Download best audio, prefer opus/m4a, convert to mp3 320k
         cmd = [
             "yt-dlp",
             "--no-playlist",
@@ -59,8 +60,3 @@ def download_track(
         downloaded[0].rename(dest)
         print(f"  [yt-dlp] saved to {dest}")
         return dest
-
-
-def _safe_filename(name: str) -> str:
-    """Remove characters that are invalid in filenames."""
-    return re.sub(r'[<>:"/\\|?*]', "", name).strip()
