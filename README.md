@@ -137,7 +137,7 @@ api_key = "your-api-key"
 
 [quality]
 formats = ["wav", "mp3"]           # preference order
-min_mp3_bitrate = 320              # reject MP3s below this bitrate
+min_mp3_bitrate = 300              # reject MP3s below this bitrate
 
 [search]
 search_timeout_seconds = 15        # how long to wait for Soulseek results per query

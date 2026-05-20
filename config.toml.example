@@ -9,7 +9,7 @@ api_key = "your-api-key-here"
 [quality]
 # Accepted formats in preference order. Only "wav" and "mp3" supported.
 formats = ["wav", "mp3"]
-min_mp3_bitrate = 320
+min_mp3_bitrate = 300
 
 [search]
 # Seconds to wait for slskd search results before moving to next query variant
