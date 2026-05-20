@@ -98,7 +98,12 @@ docker restart slskd
 python main.py --seed
 ```
 
-**Or download a batch of your most recent likes:**
+> If you accidentally ran `--seed` before you were ready (or want to re-download everything), run `--unseed` to reset and start fresh:
+> ```bash
+> python main.py --unseed
+> ```
+
+**Download a batch of your most recent likes:**
 ```bash
 python main.py --limit 250
 ```
@@ -109,6 +114,15 @@ python main.py
 ```
 
 Any tracks that couldn't be downloaded are saved to `failed.txt` in your output directory.
+
+## CLI reference
+
+| Flag | Description |
+|------|-------------|
+| *(none)* | Download all new liked songs |
+| `--limit N` | Process at most N new tracks this run |
+| `--seed` | Mark all current likes as seen without downloading (use on first setup) |
+| `--unseed` | Clear all downloaded IDs so every liked song re-downloads on next run |
 
 ## Config reference
 

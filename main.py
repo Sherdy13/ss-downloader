@@ -48,6 +48,11 @@ def main() -> None:
         help="Mark all current liked songs as seen without downloading. Run once on first setup.",
     )
     parser.add_argument(
+        "--unseed",
+        action="store_true",
+        help="Clear all downloaded IDs so every liked song will be downloaded again on the next run.",
+    )
+    parser.add_argument(
         "--limit",
         type=int,
         default=None,
@@ -61,6 +66,11 @@ def main() -> None:
     state_file = config.STATE_FILE
     q = cfg["quality"]
     s = cfg["search"]
+
+    if args.unseed:
+        count = state.clear_downloaded(state_file)
+        print(f"Cleared {count} ID(s) from downloaded state. All liked songs will be downloaded on next run.")
+        return
 
     print("Connecting to YouTube Music...")
     yt_client = ytmusic.build_client(config.BROWSER_AUTH_FILE)

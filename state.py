@@ -60,5 +60,14 @@ def mark_failed(state_file: Path, video_id: str, reason: str, artist: str = "", 
         save(state_file, data)
 
 
+def clear_downloaded(state_file: Path) -> int:
+    with _locked(state_file):
+        data = load(state_file)
+        count = len(data["downloaded"])
+        data["downloaded"] = []
+        save(state_file, data)
+    return count
+
+
 def is_downloaded(state: dict, video_id: str) -> bool:
     return video_id in state["downloaded"]
