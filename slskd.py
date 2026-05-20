@@ -66,9 +66,15 @@ def _ext(filename: str) -> str:
     return Path(filename).suffix.lower()
 
 
+MAX_FILE_BYTES = 50 * 1024 * 1024  # 50MB — ~20min at 320kbps
+
+
 def _is_acceptable(f: dict, min_mp3_bitrate: int) -> bool:
     ext = _ext(f.get("filename", ""))
     if ext not in ACCEPTED_EXTENSIONS:
+        return False
+    size = f.get("size") or 0
+    if size > MAX_FILE_BYTES:
         return False
     if ext == ".mp3":
         bitrate = f.get("bitRate") or 0

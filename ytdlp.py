@@ -5,6 +5,24 @@ from pathlib import Path
 from utils import safe_filename
 
 
+MAX_DURATION_SECONDS = 20 * 60
+
+
+def _get_duration(url: str) -> int | None:
+    """Return duration in seconds via yt-dlp --dump-json, or None on failure."""
+    import json
+    try:
+        result = subprocess.run(
+            ["yt-dlp", "--dump-json", "--no-playlist", url],
+            capture_output=True, text=True, timeout=30,
+        )
+        if result.returncode == 0:
+            return json.loads(result.stdout).get("duration")
+    except Exception:
+        pass
+    return None
+
+
 def download_track(
     video_id: str,
     artist: str,
@@ -23,6 +41,11 @@ def download_track(
     output_dir.mkdir(parents=True, exist_ok=True)
     clean_name = safe_filename(f"{artist} - {title}")
     url = f"https://www.youtube.com/watch?v={video_id}"
+
+    duration = _get_duration(url)
+    if duration is not None and duration > MAX_DURATION_SECONDS:
+        print(f"  [yt-dlp] skipping — duration {duration//60}m exceeds 20m limit")
+        return None
 
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
