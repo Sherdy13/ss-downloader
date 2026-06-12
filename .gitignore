@@ -20,8 +20,9 @@ state.json
 *.flac
 failed.txt
 
-# Claude Code
+# Claude Code and tooling
 .claude/
+.superpowers/
 
 # macOS
 .DS_Store

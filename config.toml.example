@@ -1,20 +1,2 @@
 [output]
 dir = "~/Music/ss_downloader"
-
-[slskd]
-host = "localhost"
-port = 5030
-api_key = "your-api-key-here"
-
-[quality]
-# Accepted formats in preference order. Only "wav" and "mp3" supported.
-formats = ["wav", "mp3"]
-min_mp3_bitrate = 300
-
-[search]
-# Seconds to wait for slskd search results before moving to next query variant
-search_timeout_seconds = 15
-# Seconds to wait for a download to complete before giving up and using yt-dlp
-download_timeout_seconds = 120
-# Polling interval in seconds when waiting for search results or downloads
-poll_interval_seconds = 2

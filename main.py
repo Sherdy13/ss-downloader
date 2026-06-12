@@ -1,26 +1,14 @@
 import argparse
-import sys
 from pathlib import Path
 
 import config
-import slskd
 import state
 import ytdlp
 import ytmusic
 from utils import safe_filename
 
 
-def check_slskd(client) -> None:
-    try:
-        client.application.state()
-    except Exception:
-        print("Could not connect to slskd. Is it running?")
-        print("Start it with: docker compose up -d")
-        sys.exit(1)
-
-
 def file_already_exists(output_dir: Path, artist: str, title: str) -> Path | None:
-    """Return the existing file path if any version of artist - title is on disk."""
     stem = safe_filename(f"{artist} - {title}").lower()
     for f in output_dir.iterdir() if output_dir.exists() else []:
         if f.stem.lower() == stem and f.suffix.lower() in {".wav", ".mp3"}:
@@ -29,7 +17,6 @@ def file_already_exists(output_dir: Path, artist: str, title: str) -> Path | Non
 
 
 def seed(yt_client, state_file: Path) -> None:
-    """Mark all currently liked songs as seen without downloading anything."""
     print("Fetching all liked songs to seed state...")
     all_tracks = ytmusic.get_liked_songs(yt_client)
     current = state.load(state_file)
@@ -40,17 +27,35 @@ def seed(yt_client, state_file: Path) -> None:
     print(f"Seeded {len(new_ids)} track(s). Future runs will only download new likes.")
 
 
+def write_failed_report(state_file: Path, output_dir: Path) -> None:
+    current = state.load(state_file)
+    failed = current.get("failed", {})
+    if not failed:
+        return
+    output_dir.mkdir(parents=True, exist_ok=True)
+    report = output_dir / "failed.txt"
+    lines = []
+    for video_id, entry in failed.items():
+        artist = entry.get("artist", "Unknown Artist")
+        title = entry.get("title", "Unknown Title")
+        attempts = entry.get("attempts", 1)
+        lines.append(f"{artist} - {title}  (attempts: {attempts}, id: {video_id})")
+    lines.sort()
+    report.write_text("\n".join(lines) + "\n")
+    print(f"--- {len(lines)} track(s) could not be downloaded. See {report} ---")
+
+
 def main() -> None:
-    parser = argparse.ArgumentParser(description="YouTube Music → Soulseek/yt-dlp downloader")
+    parser = argparse.ArgumentParser(description="YouTube Music → yt-dlp batch downloader")
     parser.add_argument(
         "--seed",
         action="store_true",
-        help="Mark all current liked songs as seen without downloading. Run once on first setup.",
+        help="Mark all current likes as seen without downloading. Run once on first setup.",
     )
     parser.add_argument(
         "--unseed",
         action="store_true",
-        help="Clear all downloaded IDs so every liked song will be downloaded again on the next run.",
+        help="Clear all downloaded IDs so every liked song re-downloads on next run.",
     )
     parser.add_argument(
         "--limit",
@@ -64,12 +69,10 @@ def main() -> None:
     cfg = config.load()
     output_dir = Path(cfg["output"]["dir"])
     state_file = config.STATE_FILE
-    q = cfg["quality"]
-    s = cfg["search"]
 
     if args.unseed:
         count = state.clear_downloaded(state_file)
-        print(f"Cleared {count} ID(s) from downloaded state. All liked songs will be downloaded on next run.")
+        print(f"Cleared {count} ID(s). All liked songs will be downloaded on next run.")
         return
 
     print("Connecting to YouTube Music...")
@@ -79,15 +82,6 @@ def main() -> None:
     if args.seed:
         seed(yt_client, state_file)
         return
-
-    print("Connecting to slskd...")
-    slskd_client = slskd.build_client(
-        host=cfg["slskd"]["host"],
-        port=cfg["slskd"]["port"],
-        api_key=cfg["slskd"]["api_key"],
-    )
-    check_slskd(slskd_client)
-    print("slskd OK")
 
     current_state = state.load(state_file)
     downloaded_ids = set(current_state["downloaded"])
@@ -113,24 +107,6 @@ def main() -> None:
             state.mark_downloaded(state_file, video_id)
             continue
 
-        result = slskd.download_track(
-            client=slskd_client,
-            artist=artist,
-            title=title,
-            output_dir=output_dir,
-            search_timeout=s["search_timeout_seconds"],
-            download_timeout=s["download_timeout_seconds"],
-            poll_interval=s["poll_interval_seconds"],
-            min_mp3_bitrate=q["min_mp3_bitrate"],
-            formats=q["formats"],
-        )
-
-        if result:
-            state.mark_downloaded(state_file, video_id)
-            print(f"  Done via slskd: {result.name}\n")
-            continue
-
-        print(f"  slskd exhausted — trying yt-dlp...")
         result = ytdlp.download_track(
             video_id=video_id,
             artist=artist,
@@ -140,32 +116,12 @@ def main() -> None:
 
         if result:
             state.mark_downloaded(state_file, video_id)
-            print(f"  Done via yt-dlp: {result.name}\n")
+            print(f"  Done: {result.name}\n")
         else:
-            state.mark_failed(state_file, video_id, reason="all_methods_failed", artist=artist, title=title)
+            state.mark_failed(state_file, video_id, reason="download_failed", artist=artist, title=title)
             print(f"  Failed: {artist} - {title}\n")
 
     write_failed_report(state_file, output_dir)
-
-
-def write_failed_report(state_file: Path, output_dir: Path) -> None:
-    current = state.load(state_file)
-    failed = current.get("failed", {})
-    if not failed:
-        return
-
-    output_dir.mkdir(parents=True, exist_ok=True)
-    report = output_dir / "failed.txt"
-    lines = []
-    for video_id, entry in failed.items():
-        artist = entry.get("artist", "Unknown Artist")
-        title = entry.get("title", "Unknown Title")
-        attempts = entry.get("attempts", 1)
-        lines.append(f"{artist} - {title}  (attempts: {attempts}, id: {video_id})")
-
-    lines.sort()
-    report.write_text("\n".join(lines) + "\n")
-    print(f"--- {len(lines)} track(s) could not be downloaded. See {report} ---")
 
 
 if __name__ == "__main__":
